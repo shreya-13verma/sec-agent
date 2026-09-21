@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: suse_mlm_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://compliance_user:compliance_pass@db:5432/compliance_db
+      - SECRET_KEY=suse-mlm-compliance-prod-secret-2026
+      - SUSE_MLM_URL=https://10.0.33.56/rhn/apidoc/index.jsp
+      - SUSE_MLM_API_BASE=https://10.0.33.56/rpc/api
+      - SUSE_MLM_USER=admin
+      - SUSE_MLM_PASSWORD=admin123
+      - SUSE_MLM_MOCK_FALLBACK=True
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - compliance_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: suse_mlm_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - compliance_net
+
+  db:
+    image: postgres:16-alpine
+    container_name: suse_mlm_db
+    environment:
+      - POSTGRES_USER=compliance_user
+      - POSTGRES_PASSWORD=compliance_pass
+      - POSTGRES_DB=compliance_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compliance_user -d compliance_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - compliance_net
+
+networks:
+  compliance_net:
+    driver: bridge
+
+volumes:
+  pgdata:
