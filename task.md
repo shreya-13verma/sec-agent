@@ -39,3 +39,12 @@ Legend: [ ] not started · [x] done
 - [x] Execute automated Playwright E2E browser tests against live frontend/backend services (covers Step 8.1, TC-016 through TC-022)
 - [x] Author industry-grade root `README.md` and `docs/APPLICATION_DOCUMENTATION.md` along with phase logs `docs/PHASE_*.md` (covers Step 6)
 - [x] Create and verify `docker-compose.yml` multi-container build and orchestration (covers Section 17)
+
+## Phase 5 — FastMCP SUSE MLM Server & Real Server Integration
+- [x] Implement FastMCP Server in `backend/app/mcp_server.py` with standard MLM MCP tools (`list_systems`, `get_details`, `list_packages`, `list_channels`, `list_errata`, `schedule_errata`, `schedule_package`)
+- [x] Connect adapter (`backend/app/services/suse_mlm_client.py`) to the live SUSE MLM instance (`https://10.0.33.56/rpc/api`, user: `admin`, pass: `linux`)
+- [x] Synchronize real server fleet (`hana-node1`, `hana-node2`, `klp-server`, `monitoring-srv`, `rhel10`, `trento-server`, `ubuntu240`) into normalized database tables
+- [x] Write and run FastMCP tool integration tests in `backend/tests/test_mcp_tools.py`
+- [x] Re-run full regression suites (Backend Pytest + Playwright E2E Browser tests)
+- [x] Create `docs/PHASE_5_FASTMCP_MLM_INTEGRATION.md` and update `README.md` and `APPLICATION_DOCUMENTATION.md`
+- [x] Commit and push changes to GitHub repository

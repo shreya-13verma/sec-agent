@@ -14,8 +14,8 @@ test.describe('Host Discovery & Compliance Audits (TC-017, TC-018)', () => {
     await expect(page.getByText('Host Inventory & MLM Registered Systems')).toBeVisible();
 
     // Test Search input
-    await page.fill('input[placeholder*="Search by hostname"]', 'sles15-prod');
-    await expect(page.getByText('sles15-prod-db01.corp.internal')).toBeVisible();
+    await page.fill('input[placeholder*="Search by hostname"]', 'hana');
+    await expect(page.getByText('hana-node1').first()).toBeVisible();
 
     // Click Inspect / View Details
     await page.click('text=View Details');

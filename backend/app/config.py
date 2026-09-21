@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     SUSE_MLM_URL: str = "https://10.0.33.56/rhn/apidoc/index.jsp"
     SUSE_MLM_API_BASE: str = "https://10.0.33.56/rpc/api"
     SUSE_MLM_USER: str = "admin"
-    SUSE_MLM_PASSWORD: str = "admin123"
+    SUSE_MLM_PASSWORD: str = "linux"
     SUSE_MLM_MOCK_FALLBACK: bool = True
     
     # Operational & Domain Defaults

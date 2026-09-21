@@ -29,11 +29,11 @@ def test_list_hosts_search_and_filter(client, admin_headers):
     assert all(item["os_family"] == "SLES" for item in items)
 
     # Search by hostname pattern
-    response_search = client.get("/api/v1/hosts?search=sles15-prod", headers=admin_headers)
+    response_search = client.get("/api/v1/hosts?search=hana", headers=admin_headers)
     assert response_search.status_code == 200
     search_items = response_search.json()["items"]
     assert len(search_items) >= 1
-    assert "sles15-prod" in search_items[0]["hostname"]
+    assert "hana" in search_items[0]["hostname"].lower()
 
 def test_get_host_detail(client, admin_headers):
     """Get complete host detail with packages, errata, channels."""
