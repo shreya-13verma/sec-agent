@@ -28,7 +28,7 @@ class FastMCPBridge:
     def ensure_authenticated(self) -> str:
         """Authenticate with SUSE MLM FastMCP server."""
         if not self._session_token:
-            res = auth_login("admin", "admin123")
+            res = auth_login("admin", "linux")
             if res.get("status") == "success":
                 self._session_token = res["session_token"]
             else:

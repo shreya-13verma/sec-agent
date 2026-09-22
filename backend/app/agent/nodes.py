@@ -6,6 +6,22 @@ from typing import Dict, Any, List
 from backend.app.agent.state import AgentState
 from backend.app.agent.mcp_client import mcp_bridge
 
+def _resolve_server_id(query: str, systems: List[Dict[str, Any]]) -> int:
+    """Extract server ID from natural query or resolve by hostname."""
+    # Check numeric ID
+    id_match = re.search(r"\b(100001000[0-6]|\d{4,10})\b", query)
+    if id_match:
+        return int(id_match.group(1))
+
+    # Check hostname match
+    q_lower = query.lower()
+    for s in systems:
+        name = s.get("name", "").lower()
+        if name in q_lower or name.split(".")[0] in q_lower:
+            return s["id"]
+
+    return systems[0]["id"] if systems else 1000010000
+
 def analyze_intent(state: AgentState) -> Dict[str, Any]:
     """Classify user query into actionable security/compliance intent."""
     query = state["user_query"].lower()
@@ -39,18 +55,15 @@ def execute_tools(state: AgentState) -> Dict[str, Any]:
     thoughts = list(state.get("thought_log", []))
     tool_calls = list(state.get("tool_calls", []))
 
-    # Extract target server ID if present
-    server_match = re.search(r"\b(100[1-4])\b", query)
-    server_id = int(server_match.group(1)) if server_match else None
+    systems = mcp_bridge.list_systems()
+    target_sid = _resolve_server_id(query, systems)
 
     # Extract CVE ID if present
     cve_match = re.search(r"(CVE-\d{4}-\d{4,7})", query, re.IGNORECASE)
     cve_id = cve_match.group(1).upper() if cve_match else None
 
     if intent == "compliance_scan_query":
-        thoughts.append("Calling FastMCP `audit_list_scap_profiles` & `audit_get_xccdf_scan_details`...")
-        profiles = mcp_bridge.list_scap_profiles()
-        target_sid = server_id or 1001
+        thoughts.append(f"Calling FastMCP `audit_get_xccdf_scan_details` for server {target_sid}...")
         scan_data = mcp_bridge.get_xccdf_scan_details(target_sid)
         tool_calls.append({
             "tool": "audit_get_xccdf_scan_details",
@@ -67,7 +80,6 @@ def execute_tools(state: AgentState) -> Dict[str, Any]:
                 "result": advisories
             })
         else:
-            target_sid = server_id or 1001
             thoughts.append(f"Calling FastMCP `system_get_relevant_errata` for server ID {target_sid}...")
             errata = mcp_bridge.get_relevant_errata(target_sid)
             tool_calls.append({
@@ -77,7 +89,6 @@ def execute_tools(state: AgentState) -> Dict[str, Any]:
             })
     elif intent == "inventory_query":
         thoughts.append("Calling FastMCP `system_list_systems`...")
-        systems = mcp_bridge.list_systems()
         tool_calls.append({
             "tool": "system_list_systems",
             "result": systems
@@ -94,12 +105,12 @@ def plan_remediation(state: AgentState) -> Dict[str, Any]:
     thoughts = list(state.get("thought_log", []))
     tool_calls = list(state.get("tool_calls", []))
 
-    server_match = re.search(r"\b(100[1-4])\b", query)
-    server_id = int(server_match.group(1)) if server_match else 1001
+    systems = mcp_bridge.list_systems()
+    server_id = _resolve_server_id(query, systems)
 
     thoughts.append(f"Inspecting pending errata for server ID {server_id} via FastMCP...")
     errata = mcp_bridge.get_relevant_errata(server_id)
-    errata_ids = [e["id"] for e in errata]
+    errata_ids = [e["id"] for e in errata[:5]]
 
     approval_token = f"appr_tok_{secrets.token_hex(16)}"
     thoughts.append(f"Generated single-use cryptographic approval token: {approval_token}")
@@ -108,8 +119,8 @@ def plan_remediation(state: AgentState) -> Dict[str, Any]:
         "server_id": server_id,
         "errata_count": len(errata),
         "errata_ids": errata_ids,
-        "advisories": [e["advisory_name"] for e in errata],
-        "cves": [e["cve_id"] for e in errata if e.get("cve_id") != "N/A"]
+        "advisories": [e["advisory_name"] for e in errata[:4]],
+        "cves": [e["cve_id"] for e in errata if e.get("cve_id") != "N/A"][:4]
     }
 
     return {
@@ -128,12 +139,12 @@ def synthesize_response(state: AgentState) -> Dict[str, Any]:
 
     if approval_required:
         plan = state.get("remediation_plan", {})
-        sid = plan.get("server_id", 1001)
+        sid = plan.get("server_id", 1000010000)
         cve_list = ", ".join(plan.get("cves", [])) or "None"
         adv_list = ", ".join(plan.get("advisories", []))
         response = (
             f"### 🛡️ Remediation Proposal Prepared\n\n"
-            f"A state-modifying remediation action has been proposed for **Server ID {sid}**:\n"
+            f"A state-modifying remediation action has been proposed for **Server ID {sid}** in SUSE Multi-Linux Manager:\n"
             f"- **Target Advisories:** `{adv_list}`\n"
             f"- **Associated CVEs:** `{cve_list}`\n"
             f"- **Total Errata Packages:** {plan.get('errata_count', 0)}\n\n"
@@ -141,7 +152,7 @@ def synthesize_response(state: AgentState) -> Dict[str, Any]:
         )
     elif intent == "compliance_scan_query":
         scan = next((tc["result"] for tc in tool_calls if tc["tool"] == "audit_get_xccdf_scan_details"), {})
-        sid = scan.get("server_id", 1001)
+        sid = scan.get("server_id", 1000010000)
         score = scan.get("score", 0.0)
         passes = scan.get("pass_count", 0)
         fails = scan.get("fail_count", 0)
@@ -169,11 +180,11 @@ def synthesize_response(state: AgentState) -> Dict[str, Any]:
 
         if advisories:
             rows = "\n".join(
-                [f"| `{a.get('cve_id', 'N/A')}` | **{a.get('advisory_name')}** | {a.get('advisory_type')} | {a.get('synopsis')} |" for a in advisories]
+                [f"| `{a.get('cve_id', 'N/A')}` | **{a.get('advisory_name')}** | {a.get('advisory_type')} | {a.get('synopsis')} |" for a in advisories[:8]]
             )
             response = (
                 f"### 🔍 SUSE Errata & Vulnerability Report\n\n"
-                f"Found **{len(advisories)}** relevant security advisories:\n\n"
+                f"Found **{len(advisories)}** relevant security advisories in SUSE Multi-Linux Manager:\n\n"
                 f"| CVE ID | Advisory Name | Type | Synopsis |\n"
                 f"|---|---|---|---|\n"
                 f"{rows}\n"

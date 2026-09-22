@@ -4,17 +4,13 @@ Exposes standard MCP tools wrapping XML-RPC endpoints.
 """
 from typing import List, Dict, Any, Optional
 from fastmcp import FastMCP
-from mcp_server.mlm_client import SuseMLMClient, MLMClientException
+from mcp_server.mlm_client import mlm_client, MLMClientException
 import os
 
 mcp = FastMCP("suse-mlm-security")
-mlm_client = SuseMLMClient(
-    base_url=os.getenv("MLM_API_URL", "https://10.0.33.56/rpc/api"),
-    mock_mode=True
-)
 
 @mcp.tool()
-def auth_login(username: str = "admin", password: str = "admin123") -> Dict[str, Any]:
+def auth_login(username: str = "admin", password: str = "linux") -> Dict[str, Any]:
     """Authenticate with SUSE MLM XML-RPC and obtain an active session key."""
     try:
         token = mlm_client.login(username, password)
@@ -32,7 +28,7 @@ def auth_logout(session_token: str) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 @mcp.tool()
-def system_list_systems(session_token: str) -> Dict[str, Any]:
+def system_list_systems(session_token: str = "") -> Dict[str, Any]:
     """List all managed Linux servers registered in SUSE MLM / Uyuni."""
     try:
         systems = mlm_client.list_systems(session_token)
@@ -41,7 +37,7 @@ def system_list_systems(session_token: str) -> Dict[str, Any]:
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def system_get_details(session_token: str, server_id: int) -> Dict[str, Any]:
+def system_get_details(session_token: str = "", server_id: int = 1000010000) -> Dict[str, Any]:
     """Get system metadata, kernel, OS, and status for a specific server."""
     try:
         details = mlm_client.get_system_details(session_token, server_id)
@@ -50,7 +46,7 @@ def system_get_details(session_token: str, server_id: int) -> Dict[str, Any]:
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def system_list_installed_packages(session_token: str, server_id: int) -> Dict[str, Any]:
+def system_list_installed_packages(session_token: str = "", server_id: int = 1000010000) -> Dict[str, Any]:
     """List installed RPM packages and versions for a given server."""
     try:
         packages = mlm_client.list_installed_packages(session_token, server_id)
@@ -59,7 +55,7 @@ def system_list_installed_packages(session_token: str, server_id: int) -> Dict[s
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def audit_list_scap_profiles(session_token: str) -> Dict[str, Any]:
+def audit_list_scap_profiles(session_token: str = "") -> Dict[str, Any]:
     """List native OpenSCAP security benchmark profiles available in SUSE MLM (e.g. CIS, DISA STIG, HIPAA)."""
     try:
         profiles = mlm_client.list_scap_profiles(session_token)
@@ -69,8 +65,8 @@ def audit_list_scap_profiles(session_token: str) -> Dict[str, Any]:
 
 @mcp.tool()
 def audit_schedule_xccdf_scan(
-    session_token: str,
-    server_id: int,
+    session_token: str = "",
+    server_id: int = 1000010000,
     profile_name: str = "xccdf_org.ssgproject.content_profile_cis",
     path: str = "/usr/share/xml/scap/ssg/content/ssg-sle15-xccdf.xml"
 ) -> Dict[str, Any]:
@@ -82,7 +78,7 @@ def audit_schedule_xccdf_scan(
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def audit_get_xccdf_scan_details(session_token: str, server_id: int) -> Dict[str, Any]:
+def audit_get_xccdf_scan_details(session_token: str = "", server_id: int = 1000010000) -> Dict[str, Any]:
     """Retrieve detailed pass/fail rule results and compliance score for a server's latest OpenSCAP audit."""
     try:
         details = mlm_client.get_xccdf_scan_details(session_token, server_id)
@@ -91,7 +87,7 @@ def audit_get_xccdf_scan_details(session_token: str, server_id: int) -> Dict[str
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def errata_find_by_cve(session_token: str, cve_id: str) -> Dict[str, Any]:
+def errata_find_by_cve(session_token: str = "", cve_id: str = "CVE-2024-6387") -> Dict[str, Any]:
     """Lookup SUSE Errata advisories addressing a specific CVE identifier (e.g. CVE-2024-3094)."""
     try:
         advisories = mlm_client.find_errata_by_cve(session_token, cve_id)
@@ -100,7 +96,7 @@ def errata_find_by_cve(session_token: str, cve_id: str) -> Dict[str, Any]:
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def system_get_relevant_errata(session_token: str, server_id: int) -> Dict[str, Any]:
+def system_get_relevant_errata(session_token: str = "", server_id: int = 1000010000) -> Dict[str, Any]:
     """Fetch all pending security, bugfix, and enhancement errata applicable to a server."""
     try:
         errata = mlm_client.get_relevant_errata(session_token, server_id)
@@ -109,7 +105,7 @@ def system_get_relevant_errata(session_token: str, server_id: int) -> Dict[str, 
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def system_schedule_apply_errata(session_token: str, server_id: int, errata_ids: List[int]) -> Dict[str, Any]:
+def system_schedule_apply_errata(session_token: str = "", server_id: int = 1000010000, errata_ids: List[int] = []) -> Dict[str, Any]:
     """Schedule installation of selected errata advisories on a target server."""
     try:
         action_id = mlm_client.schedule_apply_errata(session_token, server_id, errata_ids)
@@ -118,7 +114,7 @@ def system_schedule_apply_errata(session_token: str, server_id: int, errata_ids:
         return {"status": "error", "code": e.code, "message": e.message}
 
 @mcp.tool()
-def schedule_get_action_status(session_token: str, action_id: int) -> Dict[str, Any]:
+def schedule_get_action_status(session_token: str = "", action_id: int = 90001) -> Dict[str, Any]:
     """Check the execution status of a scheduled scan or patch action in SUSE MLM."""
     try:
         status_info = mlm_client.get_action_status(session_token, action_id)

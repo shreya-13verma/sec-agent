@@ -1,13 +1,15 @@
-"""API Endpoints and Approval Security Tests (TC-008, TC-009, TC-010)."""
+"""API Endpoints and Approval Security Tests (TC-008, TC-009, TC-010) with live SUSE MLM."""
 import pytest
 
 def test_tc_008_systems_and_compliance_endpoints(test_client):
-    # Test systems listing
+    # Test systems listing from live SUSE MLM
     res = test_client.get("/api/v1/systems")
     assert res.status_code == 200
     systems = res.json()
     assert len(systems) >= 4
-    assert systems[0]["hostname"].startswith("sles15")
+    # Check that real hostnames are returned
+    hostnames = [s["hostname"].lower() for s in systems]
+    assert any("hana" in h or "trento" in h or "klp" in h or "monitoring" in h for h in hostnames)
 
     # Test server details
     server_id = systems[0]["id"]
@@ -26,9 +28,9 @@ def test_tc_008_systems_and_compliance_endpoints(test_client):
     assert "score" in scan_res.json()
 
 def test_tc_009_chat_streaming_and_approval_resolution(test_client):
-    # Post chat message requesting patch
+    # Post chat message requesting patch on live server
     chat_payload = {
-        "message": "Apply security errata to server 1001"
+        "message": "Apply security errata to server 1000010000"
     }
     res = test_client.post("/api/v1/chat/message", json=chat_payload)
     assert res.status_code == 200
@@ -68,7 +70,7 @@ def test_tc_010_approval_security_and_invalid_token(test_client):
     assert res.status_code == 404
 
     # Post message to get a fresh token then reject
-    chat_payload = {"message": "Remediate vulnerabilities on host 1004"}
+    chat_payload = {"message": "Remediate vulnerabilities on host klp-server"}
     chat_res = test_client.post("/api/v1/chat/message", json=chat_payload)
     assert chat_res.status_code == 200
 

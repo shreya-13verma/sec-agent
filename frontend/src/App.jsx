@@ -7,9 +7,11 @@ import ReportViewer from './components/reports/ReportViewer';
 export default function App() {
   const [activeTab, setActiveTab] = useState('chat'); // chat | fleet | reports
   const [sessionId, setSessionId] = useState(null);
+  const [chatInitialPrompt, setChatInitialPrompt] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleSelectServerForChat = (serverId) => {
+  const handleSelectServerForChat = (serverNameOrId) => {
+    setChatInitialPrompt(`Check OpenSCAP compliance score and failed rules for ${serverNameOrId}`);
     setActiveTab('chat');
   };
 
@@ -30,6 +32,7 @@ export default function App() {
           <ChatContainer
             currentSessionId={sessionId}
             setSessionId={setSessionId}
+            initialPrompt={chatInitialPrompt}
           />
         )}
 
