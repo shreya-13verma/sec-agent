@@ -1,44 +1,24 @@
-from pydantic import BaseModel, ConfigDict
+"""Report Schemas."""
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-class ComplianceSummaryReportItem(BaseModel):
-    framework_name: str
-    framework_code: str
-    total_scans: int
-    latest_score: float
-    hosts_compliant_count: int
-    hosts_non_compliant_count: int
+class ReportGenerateRequest(BaseModel):
+    title: Optional[str] = "Fleet Compliance & Vulnerability Audit Report"
+    scope: str = "all"  # all | system
+    target_id: str = "all"
+    formats: List[str] = ["json", "csv", "pdf"]
 
-class HostComplianceReportItem(BaseModel):
-    hostname: str
-    ip_address: str
-    os_info: str
-    compliance_status: str
-    compliance_score: float
-    critical_errata_count: int
-    missing_cves: List[str] = []
+class ReportResponse(BaseModel):
+    id: str
+    title: str
+    report_scope: str
+    target_id: str
+    pdf_path: str
+    csv_path: str
+    json_path: str
+    generated_by: str
+    created_at: datetime
 
-class ExecutiveComplianceReportResponse(BaseModel):
-    generated_at: datetime
-    fleet_total_hosts: int
-    fleet_average_score: float
-    fleet_critical_hosts_count: int
-    framework_summaries: List[ComplianceSummaryReportItem] = []
-    host_details: List[HostComplianceReportItem] = []
-
-class AuditLogResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    user_id: Optional[int] = None
-    user_username: str
-    action: str
-    resource_type: str
-    resource_id: str
-    details: str
-    ip_address: str
-    timestamp: datetime
-
-class AuditLogListResponse(BaseModel):
-    total: int
-    items: List[AuditLogResponse]
+    class Config:
+        from_attributes = True

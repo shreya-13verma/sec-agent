@@ -1,72 +1,57 @@
-from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
+"""OpenSCAP and Errata compliance models (Normalized, strictly 0 JSON columns)."""
+from sqlalchemy import Column, String, Float, Integer, Text, DateTime, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
-from backend.app.database import Base
+from datetime import datetime, timezone
+import uuid
+from backend.app.core.database import Base
 
-def utc_now():
+def generate_uuid() -> str:
+    return str(uuid.uuid4())
+
+def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
-class ComplianceFramework(Base):
-    __tablename__ = "compliance_frameworks"
+class OpenSCAPScan(Base):
+    __tablename__ = "openscap_scans"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    name = Column(String(64), unique=True, index=True, nullable=False) # CIS SLES 15 Benchmark, HIPAA Security Rule, PCI-DSS v4.0
-    code = Column(String(32), unique=True, index=True, nullable=False) # CIS_SLES_15, HIPAA, PCI_DSS_V4
-    version = Column(String(32), nullable=False)
-    description = Column(String(512), nullable=False)
-    rule_count = Column(Integer, nullable=False, default=0)
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    mlm_test_result_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    server_id = Column(BigInteger, ForeignKey("managed_servers.id", ondelete="CASCADE"), nullable=False)
+    profile_name = Column(String(255), nullable=False)
+    scan_timestamp = Column(DateTime(timezone=True), default=utc_now)
+    pass_count = Column(Integer, nullable=False, default=0)
+    fail_count = Column(Integer, nullable=False, default=0)
+    error_count = Column(Integer, nullable=False, default=0)
+    other_count = Column(Integer, nullable=False, default=0)
+    score = Column(Float, nullable=False, default=0.0)
 
-    rules = relationship("ComplianceRule", back_populates="framework", cascade="all, delete-orphan")
-    scans = relationship("ComplianceScan", back_populates="framework", cascade="all, delete-orphan")
-    agent_analyses = relationship("AgentAnalysis", back_populates="framework", cascade="all, delete-orphan")
+    server = relationship("ManagedServer", back_populates="scans")
+    rule_results = relationship("OpenSCAPRuleResult", back_populates="scan", cascade="all, delete-orphan")
 
-class ComplianceRule(Base):
-    __tablename__ = "compliance_rules"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    framework_id = Column(Integer, ForeignKey("compliance_frameworks.id", ondelete="CASCADE"), nullable=False, index=True)
-    rule_identifier = Column(String(64), nullable=False, index=True) # CIS-1.1.1.1, PCI-8.2.3
-    title = Column(String(255), nullable=False)
-    description = Column(String(1024), nullable=False)
-    severity = Column(String(32), nullable=False, index=True) # CRITICAL, HIGH, MEDIUM, LOW
-    remediation_instructions = Column(String(1024), nullable=False)
-    check_type = Column(String(64), nullable=False) # PACKAGE_REQUIRED, PACKAGE_PROHIBITED, CONFIG_PROPERTY, ERRATA_ABSENT, SERVICE_STATE
-    check_target = Column(String(255), nullable=False)
-    expected_value = Column(String(255), nullable=False)
+class OpenSCAPRuleResult(Base):
+    __tablename__ = "openscap_rule_results"
 
-    framework = relationship("ComplianceFramework", back_populates="rules")
-    findings = relationship("ComplianceFinding", back_populates="rule", cascade="all, delete-orphan")
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    scan_id = Column(String(36), ForeignKey("openscap_scans.id", ondelete="CASCADE"), nullable=False)
+    rule_identifier = Column(String(255), nullable=False, index=True)
+    rule_title = Column(String(500), nullable=False)
+    result = Column(String(50), nullable=False)  # pass | fail | error | notapplicable
+    severity = Column(String(50), nullable=False)  # low | medium | high | critical
 
-class ComplianceScan(Base):
-    __tablename__ = "compliance_scans"
+    scan = relationship("OpenSCAPScan", back_populates="rule_results")
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    framework_id = Column(Integer, ForeignKey("compliance_frameworks.id", ondelete="CASCADE"), nullable=False, index=True)
-    initiated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    scan_status = Column(String(32), nullable=False, default="PENDING", index=True) # PENDING, RUNNING, COMPLETED, FAILED
-    hosts_scanned_count = Column(Integer, nullable=False, default=0)
-    passed_rules_count = Column(Integer, nullable=False, default=0)
-    failed_rules_count = Column(Integer, nullable=False, default=0)
-    overall_score = Column(Float, nullable=False, default=0.0)
-    started_at = Column(DateTime, default=utc_now, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
 
-    framework = relationship("ComplianceFramework", back_populates="scans")
-    initiated_by = relationship("User", back_populates="scans_initiated")
-    findings = relationship("ComplianceFinding", back_populates="scan", cascade="all, delete-orphan")
+class SystemErrataAdvisory(Base):
+    __tablename__ = "system_errata_advisories"
 
-class ComplianceFinding(Base):
-    __tablename__ = "compliance_findings"
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    server_id = Column(BigInteger, ForeignKey("managed_servers.id", ondelete="CASCADE"), nullable=False)
+    advisory_name = Column(String(100), nullable=False, index=True)
+    advisory_type = Column(String(50), nullable=False)  # Security Advisory | Bug Fix Advisory | Enhancement
+    cve_id = Column(String(100), nullable=False, index=True, default="N/A")
+    synopsis = Column(Text, nullable=False)
+    issue_date = Column(DateTime(timezone=True), default=utc_now)
+    remediation_status = Column(String(50), nullable=False, default="pending")  # pending | scheduled | applied | ignored
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    scan_id = Column(Integer, ForeignKey("compliance_scans.id", ondelete="CASCADE"), nullable=False, index=True)
-    host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
-    rule_id = Column(Integer, ForeignKey("compliance_rules.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(String(32), nullable=False, index=True) # PASS, FAIL, ERROR, SKIPPED
-    observed_value = Column(String(255), nullable=False)
-    finding_details = Column(String(1024), nullable=False)
-    detected_at = Column(DateTime, default=utc_now, nullable=False)
-
-    scan = relationship("ComplianceScan", back_populates="findings")
-    host = relationship("Host", back_populates="findings")
-    rule = relationship("ComplianceRule", back_populates="findings")
+    server = relationship("ManagedServer", back_populates="errata_items")

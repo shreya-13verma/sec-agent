@@ -1,63 +1,39 @@
-from pydantic import BaseModel, ConfigDict
+"""Compliance and OpenSCAP Schemas."""
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-class ComplianceRuleResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    framework_id: int
+class RuleResultSchema(BaseModel):
     rule_identifier: str
-    title: str
-    description: str
+    rule_title: str
+    result: str
     severity: str
-    remediation_instructions: str
-    check_type: str
-    check_target: str
-    expected_value: str
 
-class ComplianceFrameworkSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    code: str
-    version: str
-    description: str
-    rule_count: int
+class OpenSCAPScanResponse(BaseModel):
+    id: str
+    mlm_test_result_id: int
+    server_id: int
+    profile_name: str
+    scan_timestamp: datetime
+    pass_count: int
+    fail_count: int
+    error_count: int
+    other_count: int
+    score: float
+    rules: Optional[List[RuleResultSchema]] = None
 
-class ComplianceFrameworkDetail(ComplianceFrameworkSummary):
-    model_config = ConfigDict(from_attributes=True)
-    rules: List[ComplianceRuleResponse] = []
+    class Config:
+        from_attributes = True
 
-class ComplianceFindingResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    scan_id: int
-    host_id: int
-    rule_id: int
-    status: str # PASS, FAIL, ERROR, SKIPPED
-    observed_value: str
-    finding_details: str
-    detected_at: datetime
-    rule: Optional[ComplianceRuleResponse] = None
+class ErrataAdvisorySchema(BaseModel):
+    id: str
+    server_id: int
+    advisory_name: str
+    advisory_type: str
+    cve_id: str
+    synopsis: str
+    issue_date: datetime
+    remediation_status: str
 
-class ComplianceScanCreate(BaseModel):
-    framework_id: int
-    host_ids: Optional[List[int]] = None # None means all registered hosts
-
-class ComplianceScanResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    framework_id: int
-    initiated_by_user_id: Optional[int] = None
-    scan_status: str
-    hosts_scanned_count: int
-    passed_rules_count: int
-    failed_rules_count: int
-    overall_score: float
-    started_at: datetime
-    completed_at: Optional[datetime] = None
-    framework: Optional[ComplianceFrameworkSummary] = None
-
-class ComplianceScanDetail(ComplianceScanResponse):
-    model_config = ConfigDict(from_attributes=True)
-    findings: List[ComplianceFindingResponse] = []
+    class Config:
+        from_attributes = True

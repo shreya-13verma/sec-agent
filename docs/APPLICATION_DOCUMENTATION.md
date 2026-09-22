@@ -1,159 +1,209 @@
-# Technical & Operational Specification
+# Comprehensive Application Documentation: SUSE MLM Security & Compliance Agent
 
-## 1. System Overview & Architecture Boundaries
-The **SUSE MLM Security & Compliance Agent** is an enterprise-grade agentic system engineered to continuously monitor, audit, plan, and remediate security posture for Linux fleets managed by SUSE Multi-Linux Manager (MLM) (`https://10.0.33.56/rhn/apidoc/index.jsp`).
+## 1. Architectural Boundary Rules & Protocols
 
-### Component Boundary Rules
-1. **Host Isolation:** Node management actions (package install, package removal, errata application) are strictly mediated through SUSE Multi-Linux Manager XML-RPC APIs. The agent does not execute arbitrary direct shell code on remote hosts without MLM audit coordination.
-2. **Normalized Data Isolation:** All entity state (hosts, channels, packages, errata, rules, findings, reasoning thoughts, remediation steps, audit events) is stored in a 100% normalized relational database schema without JSON/JSONB blobs.
-3. **Controlled Human-in-the-Loop Gate:** All autonomous remediation plans remain in `STAGED` status until explicitly approved by a user with `Admin` or `Security_Officer` permissions. Unapproved execution attempts are rejected with HTTP 400.
-4. **Automatic Post-Verification:** Execution of an approved remediation plan triggers an automated compliance scan against the target host to verify that the compliance score has improved and missing errata have been resolved.
+### 1.1 Decoupled Integration Pattern
+The application strictly enforces that the FastAPI core and LangGraph agent communicate with SUSE Multi-Linux Manager (MLM) / Uyuni exclusively through the dedicated **FastMCP Server** (`mcp_server/server.py`). No direct XML-RPC calls bypass this boundary.
 
----
+```
+[React Frontend] <-- HTTP/SSE --> [FastAPI Backend / LangGraph] <-- MCP Protocol --> [FastMCP Server] <-- XML-RPC --> [SUSE MLM]
+```
 
-## 2. API Endpoint Specification
-
-### Authentication & User Management
-- `POST /api/v1/auth/login`
-  - **Description:** Authenticates credentials and returns JWT access token with embedded role claims.
-  - **Request Body:** `{"username": "admin", "password": "..."}`
-  - **Response 200:** `{"access_token": "...", "token_type": "bearer", "user": {"id": 1, "username": "admin", "role": "Admin", "email": "..."}}`
-  - **Response 401:** `{"detail": "Invalid username or password"}`
-- `GET /api/v1/auth/me`
-  - **Description:** Returns the profile of the currently authenticated user.
-  - **Headers:** `Authorization: Bearer <token>`
-- `POST /api/v1/auth/register`
-  - **Description:** Admin endpoint for provisioning new user accounts.
-  - **Required Role:** `Admin`
-
-### Host Inventory & SUSE MLM Sync
-- `GET /api/v1/hosts`
-  - **Query Parameters:** `search` (string), `compliance_status` (string), `os_family` (string), `limit` (int), `offset` (int).
-  - **Response 200:** `{"total": int, "items": [HostSummary]}`
-- `GET /api/v1/hosts/{id}`
-  - **Description:** Returns full host detail including installed package list, missing errata advisories with CVE identifiers, and subscribed MLM software channels.
-- `POST /api/v1/hosts/sync`
-  - **Description:** Triggers inventory discovery from SUSE MLM API endpoint (`https://10.0.33.56/rpc/api`).
-  - **Required Roles:** `Admin`, `Security_Officer`, `Operator`
-  - **Response 202:** `{"status": "SUCCESS", "synced_hosts_count": int, "synced_errata_count": int}`
-- `DELETE /api/v1/hosts/{id}`
-  - **Description:** Deletes a host record, with relational cascade deletion removing all child packages, channels, and findings.
-  - **Required Role:** `Admin`
-
-### Compliance Scans & Rule Engine
-- `GET /api/v1/compliance/frameworks`
-  - **Response 200:** List of seeded compliance frameworks (`CIS_SLES_15`, `HIPAA`, `PCI_DSS_V4`).
-- `GET /api/v1/compliance/frameworks/{id}`
-  - **Response 200:** Framework definition with all active rules and check types.
-- `POST /api/v1/compliance/scans`
-  - **Description:** Executes compliance audit scan for a framework across selected or all registered hosts.
-  - **Request Body:** `{"framework_id": int, "host_ids": [int] | null}`
-  - **Response 202:** `{"id": int, "scan_status": "COMPLETED", "overall_score": float, "hosts_scanned_count": int}`
-- `GET /api/v1/compliance/scans/{id}`
-  - **Response 200:** Detailed scan results including host rule evaluation findings.
-- `GET /api/v1/compliance/findings`
-  - **Query Parameters:** `scan_id` (int), `host_id` (int), `status` (PASS | FAIL).
-
-### Autonomous Agent Engine
-- `POST /api/v1/agent/analyze`
-  - **Description:** Initiates multi-step agent reasoning session on a host.
-  - **Request Body:** `{"host_id": int, "framework_id": int | null}`
-  - **Response 200:**
-    ```json
-    {
-      "id": 1,
-      "host_id": 1,
-      "analysis_status": "PLAN_GENERATED",
-      "drift_detected": true,
-      "root_cause_summary": "1 unpatched Critical Errata; Insecure legacy services detected: telnet",
-      "thought_steps": [
-        {"step_order": 1, "thought_type": "OBSERVATION", "thought_content": "..."},
-        {"step_order": 2, "thought_type": "CORRELATION", "thought_content": "..."},
-        {"step_order": 3, "thought_type": "RISK_EVALUATION", "thought_content": "..."},
-        {"step_order": 4, "thought_type": "DECISION", "thought_content": "..."}
-      ],
-      "proposed_plan_id": 1
-    }
-    ```
-- `GET /api/v1/agent/drift-detection`
-  - **Response 200:** Fleet drift summary with recommended actions per host.
-
-### Controlled Remediation Engine
-- `GET /api/v1/remediations/plans`
-  - **Query Parameters:** `status` (STAGED | APPROVED | REJECTED | COMPLETED), `host_id` (int).
-- `GET /api/v1/remediations/plans/{id}`
-  - **Response 200:** Plan detail with ordered remediation steps, MLM action IDs, and execution logs.
-- `POST /api/v1/remediations/plans/{id}/approve`
-  - **Description:** Authorizes a staged remediation plan for execution.
-  - **Required Roles:** `Admin`, `Security_Officer`
-  - **Request Body:** `{"approval_notes": "..."}`
-- `POST /api/v1/remediations/plans/{id}/reject`
-  - **Description:** Rejects a staged remediation plan with justification.
-  - **Required Roles:** `Admin`, `Security_Officer`
-  - **Request Body:** `{"rejection_reason": "..."}`
-- `POST /api/v1/remediations/plans/{id}/execute`
-  - **Description:** Dispatches approved remediation actions to SUSE MLM.
-  - **Required Roles:** `Admin`, `Security_Officer`, `Operator`
-  - **Response 202:** `{"plan_id": int, "status": "COMPLETED", "dispatched_steps_count": int}`
-
-### Reports & Audit Trail
-- `GET /api/v1/reports/compliance`
-  - **Response 200:** Structured JSON executive compliance dataset.
-- `GET /api/v1/reports/export/csv`
-  - **Response 200:** Streamed `text/csv` attachment.
-- `GET /api/v1/reports/export/pdf`
-  - **Response 200:** Streamed `application/pdf` binary compliance dossier.
-- `GET /api/v1/audit-logs`
-  - **Query Parameters:** `action` (string), `resource_type` (string), `limit` (int), `offset` (int).
-  - **Response 200:** Immutable audit records.
+### 1.2 Human-in-the-Loop Approval Boundary
+All state-altering actions (e.g. `system.scheduleApplyErrata`, `audit.scheduleXccdfScan`) cannot be executed autonomously by the agent. When intent is classified as `remediation_request`:
+1. The LangGraph state machine halts at an `interrupt()` / proposal node.
+2. A cryptographically random, single-use token (`appr_tok_<32_hex_chars>`) is generated with a 900-second TTL.
+3. The React UI renders an interactive `ApprovalCard`.
+4. The FastMCP write tool is dispatched **only** after the operator clicks "Approve" and the token is validated against PostgreSQL.
 
 ---
 
-## 3. Data Models & Schema Mappings
+## 2. API Endpoint Reference
 
-All models reside in `backend/app/models/` and comply with the zero-JSON constraint:
-- `users`: User identity, password hash (bcrypt), role, active status.
-- `hosts`: Registered MLM systems, hardware architecture, kernel, compliance score, and status.
-- `host_channels`: Relational child table of subscribed software channels.
-- `host_packages`: Relational child table of installed RPM packages per host.
-- `errata_advisories`: Security advisories, bug fixes, CVE references, severity, and issued timestamps.
-- `host_missing_errata`: Relational join table linking hosts to applicable unpatched errata.
-- `compliance_frameworks`: Framework definitions (`CIS_SLES_15`, `HIPAA`, `PCI_DSS_V4`).
-- `compliance_rules`: Individual check definitions with target package/property and expected value.
-- `compliance_scans`: Audit execution records with summary statistics.
-- `compliance_findings`: Relational rule evaluation outcomes per host.
-- `agent_analyses`: Multi-step reasoning session records with root-cause summaries.
-- `agent_thought_steps`: Ordered thought traces (`OBSERVATION`, `CORRELATION`, `RISK_EVALUATION`, `DECISION`).
-- `remediation_plans`: Staged remediation proposals with approval notes and risk levels.
-- `remediation_steps`: Ordered actionable steps (`APPLY_ERRATA`, `INSTALL_PACKAGE`, `REMOVE_PACKAGE`).
-- `audit_logs`: Immutable security log with actor username, action, resource ID, and client IP.
+### 2.1 Chat & Streaming
+- `POST /api/v1/chat/message`
+  - **Request Body:** `{"session_id": string (optional), "message": string}`
+  - **Response:** Server-Sent Events (SSE) stream yielding:
+    - `event: session_id` -> `{"session_id": "uuid"}`
+    - `event: thought` -> `{"thought": "string"}`
+    - `event: tool_call` -> `{"tool": "string", "status": "executed"}`
+    - `event: approval_required` -> `{"approval_token": "string", "plan": {...}}`
+    - `event: token` -> `{"token": "chunk "}`
+    - `event: done` -> `{"status": "completed"}`
+- `GET /api/v1/chat/sessions`
+  - Returns array of `ChatSessionResponse` sorted by `updated_at DESC`.
+- `GET /api/v1/chat/sessions/{session_id}/messages`
+  - Returns complete chronological message history for a session.
+
+### 2.2 Managed Servers & Fleet Inventory
+- `GET /api/v1/systems`
+  - Returns list of registered server summaries (`id`, `hostname`, `ip_address`, `os_release`, `kernel_version`, `compliance_score`, `security_errata_count`).
+- `GET /api/v1/systems/{server_id}`
+  - Returns granular metadata for a given server.
+- `GET /api/v1/systems/{server_id}/packages`
+  - Returns installed RPM package catalog.
+
+### 2.3 Compliance & OpenSCAP
+- `GET /api/v1/compliance/scap-profiles`
+  - Lists native OpenSCAP profiles (`CIS`, `DISA STIG`, `HIPAA`, `PCI-DSS`).
+- `GET /api/v1/compliance/scans/{server_id}`
+  - Returns latest OpenSCAP scan scores, pass/fail counts, and detailed rule failure objects.
+- `GET /api/v1/compliance/errata/{server_id}`
+  - Returns pending Security, Bugfix, and Enhancement advisories with mapped CVEs.
+
+### 2.4 Human-in-the-Loop Approvals
+- `GET /api/v1/approvals/pending`
+  - Lists all active, unresolved remediation approval requests.
+- `POST /api/v1/approvals/{token}/action`
+  - **Request Body:** `{"approved": boolean, "operator": string, "comment": string}`
+  - **Behavior:** Validates TTL and single-use status; on approval, invokes FastMCP `system_schedule_apply_errata` and returns `mlm_action_id`.
+
+### 2.5 Compliance Reporting
+- `POST /api/v1/reports/generate`
+  - **Request Body:** `{"title": string, "scope": "all"|"system", "target_id": string, "formats": ["pdf", "csv", "json"]}`
+  - **Response:** `ReportResponse` with generated file paths.
+- `GET /api/v1/reports/{report_id}/download/{format_type}`
+  - Streams binary download (`application/pdf`, `text/csv`, `application/json`).
+
+---
+
+## 3. Relational Data Models (Strict 0 JSON Columns)
+
+All database entities are fully normalized without any schemaless JSON or JSONB columns:
+
+```sql
+-- Chat Sessions
+CREATE TABLE chat_sessions (
+    id VARCHAR(36) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Chat Messages
+CREATE TABLE chat_messages (
+    id VARCHAR(36) PRIMARY KEY,
+    session_id VARCHAR(36) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    sender VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    thought_log TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Managed Servers
+CREATE TABLE managed_servers (
+    id BIGINT PRIMARY KEY,
+    hostname VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    os_release VARCHAR(100) NOT NULL,
+    kernel_version VARCHAR(100) NOT NULL,
+    last_checkin TIMESTAMP WITH TIME ZONE,
+    compliance_score FLOAT NOT NULL DEFAULT 0.0,
+    security_errata_count INTEGER NOT NULL DEFAULT 0,
+    bugfix_errata_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- OpenSCAP Scans
+CREATE TABLE openscap_scans (
+    id VARCHAR(36) PRIMARY KEY,
+    mlm_test_result_id BIGINT UNIQUE NOT NULL,
+    server_id BIGINT REFERENCES managed_servers(id) ON DELETE CASCADE,
+    profile_name VARCHAR(255) NOT NULL,
+    scan_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    pass_count INTEGER NOT NULL DEFAULT 0,
+    fail_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    other_count INTEGER NOT NULL DEFAULT 0,
+    score FLOAT NOT NULL DEFAULT 0.0
+);
+
+-- OpenSCAP Rule Results
+CREATE TABLE openscap_rule_results (
+    id VARCHAR(36) PRIMARY KEY,
+    scan_id VARCHAR(36) REFERENCES openscap_scans(id) ON DELETE CASCADE,
+    rule_identifier VARCHAR(255) NOT NULL,
+    rule_title VARCHAR(500) NOT NULL,
+    result VARCHAR(50) NOT NULL,
+    severity VARCHAR(50) NOT NULL
+);
+
+-- System Errata Advisories
+CREATE TABLE system_errata_advisories (
+    id VARCHAR(36) PRIMARY KEY,
+    server_id BIGINT REFERENCES managed_servers(id) ON DELETE CASCADE,
+    advisory_name VARCHAR(100) NOT NULL,
+    advisory_type VARCHAR(50) NOT NULL,
+    cve_id VARCHAR(100) NOT NULL DEFAULT 'N/A',
+    synopsis TEXT NOT NULL,
+    issue_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    remediation_status VARCHAR(50) NOT NULL DEFAULT 'pending'
+);
+
+-- Remediation Approvals
+CREATE TABLE remediation_approvals (
+    id VARCHAR(36) PRIMARY KEY,
+    approval_token VARCHAR(128) UNIQUE NOT NULL,
+    session_id VARCHAR(36) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    server_id BIGINT REFERENCES managed_servers(id) ON DELETE CASCADE,
+    action_type VARCHAR(100) NOT NULL DEFAULT 'Apply Errata Remediation',
+    proposed_errata_ids TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    operator VARCHAR(100),
+    operator_comment TEXT,
+    mlm_action_id BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Compliance Reports
+CREATE TABLE compliance_reports (
+    id VARCHAR(36) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    report_scope VARCHAR(50) NOT NULL,
+    target_id VARCHAR(100) NOT NULL DEFAULT 'all',
+    pdf_path VARCHAR(500) NOT NULL,
+    csv_path VARCHAR(500) NOT NULL,
+    json_path VARCHAR(500) NOT NULL,
+    generated_by VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit Logs
+CREATE TABLE audit_logs (
+    id VARCHAR(36) PRIMARY KEY,
+    event_type VARCHAR(100) NOT NULL,
+    operator VARCHAR(100) NOT NULL,
+    resource_type VARCHAR(100) NOT NULL,
+    resource_id VARCHAR(100) NOT NULL,
+    action_details TEXT NOT NULL,
+    ip_address VARCHAR(45) NOT NULL DEFAULT '127.0.0.1',
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
 
 ---
 
 ## 4. State Transitions & Lifecycle Rules
 
-### Audit Scan Lifecycle
+### 4.1 Remediation Proposal Lifecycle
 ```
-[PENDING] ──► [RUNNING] ──► [COMPLETED]
-                   │
-                   └──► [FAILED]
+[User Query] 
+     │
+     ▼
+[Intent Analysis: remediation_request]
+     │
+     ▼
+[Generate Plan & Token (status: pending)] ─── (Timeout > 900s) ───► [status: expired]
+     │
+     ├─────────── Operator Action: Approve ──────────► [Dispatch FastMCP: status: approved]
+     │
+     └─────────── Operator Action: Reject ──────────► [status: rejected (No MLM modification)]
 ```
-
-### Remediation Plan Lifecycle
-```
-                 ┌──► [REJECTED]
-                 │
-[STAGED] ──► [APPROVED] ──► [IN_PROGRESS] ──► [COMPLETED]
-                                   │
-                                   └──► [FAILED]
-```
-- **Rule 1:** A plan cannot transition to `APPROVED` or `REJECTED` unless its current state is `STAGED` or `DRAFT`.
-- **Rule 2:** `POST .../execute` is strictly rejected if the plan is in `STAGED`, `REJECTED`, or `DRAFT` state.
-- **Rule 3:** Once execution finishes, the plan moves to `COMPLETED` and automatically launches a verification scan.
 
 ---
 
-## 5. Error Handling & Resilience Policy
-- **SUSE MLM Offline Graceful Degradation:** When the upstream endpoint (`10.0.33.56`) is unreachable, the adapter transparently utilizes cached/mock infrastructure, allowing security teams to continue reviewing baselines without system crashes.
-- **Transactional Rollback:** Database sessions utilize scoped transactions; any unhandled database exception results in an immediate rollback preventing partial/corrupt states.
-- **Uniform Error Envelope:** All client errors return standard FastAPI schema `{"detail": "<Human-readable message>"}`.
+## 5. Resilience & Error Handling Policies
+- **XML-RPC Network Partition:** FastMCP wraps raw faults and returns structured JSON `{status: "error", code: N, message: "..."}` preventing uncaught exceptions.
+- **Fail-Closed Security:** Approval tokens are strictly single-use and expire after 15 minutes (900 seconds). Subsequent execution attempts return 400 Bad Request.
+- **Streaming Integrity:** SSE connections flush thought events and tokens asynchronously; if a client disconnects mid-stream, database commits for completed messages remain consistent.

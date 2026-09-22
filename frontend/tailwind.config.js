@@ -8,11 +8,11 @@ export default {
     extend: {
       colors: {
         suse: {
-          dark: '#0c322c',
           green: '#30ba78',
+          dark: '#0c322c',
           pine: '#195144',
-          mint: '#86e4b8',
-          accent: '#fe7c3f'
+          gray: '#1f2937',
+          light: '#f8fafc'
         }
       }
     },

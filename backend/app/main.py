@@ -1,40 +1,25 @@
-import os
-import sys
-from fastapi import FastAPI, Depends, Request
+"""FastAPI Main Entrypoint."""
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
-# Add parent directory to sys.path to ensure robust package imports
-sys.path.insert(0, "/home/shreya/compliance-agent")
-
-from backend.app.config import settings
-from backend.app.database import engine, Base, SessionLocal
-from backend.app.utils.seed_data import seed_database
-from backend.app.routers import (
-    auth, hosts, compliance, agent, remediation, reports, audit_logs
-)
+from backend.app.core.config import settings
+from backend.app.core.database import init_db
+from backend.app.api.v1.router import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB tables
-    Base.metadata.create_all(bind=engine)
-    # Seed default data
-    db = SessionLocal()
-    try:
-        seed_database(db)
-    finally:
-        db.close()
+    # Initialize DB schemas on startup
+    await init_db()
     yield
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="Autonomous security and compliance system for SUSE Multi-Linux Manager (MLM) fleets with agentic reasoning, CIS/HIPAA audits, and controlled remediation.",
-    version="1.0.0",
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan
 )
 
-# CORS Middleware
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,22 +28,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include Routers
-app.include_router(auth.router, prefix=settings.API_V1_STR)
-app.include_router(hosts.router, prefix=settings.API_V1_STR)
-app.include_router(compliance.router, prefix=settings.API_V1_STR)
-app.include_router(agent.router, prefix=settings.API_V1_STR)
-app.include_router(remediation.router, prefix=settings.API_V1_STR)
-app.include_router(reports.router, prefix=settings.API_V1_STR)
-app.include_router(audit_logs.router, prefix=settings.API_V1_STR)
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/health", tags=["Health"])
-@app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
-def health_check():
-    return {
-        "status": "healthy",
-        "database": "connected",
-        "mlm_adapter": "ready",
-        "service": settings.PROJECT_NAME,
-        "version": "1.0.0"
-    }
+@app.get("/health/live", tags=["health"])
+async def liveness():
+    return {"status": "ok", "service": "SUSE MLM Security Agent"}
+
+@app.get("/health/ready", tags=["health"])
+async def readiness():
+    return {"status": "ready", "database": "connected", "mcp": "ready"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,37 +1,20 @@
-from backend.app.schemas.user import UserCreate, UserResponse, Token, TokenPayload, LoginRequest
-from backend.app.schemas.host import (
-    HostSummary, HostDetail, HostListResponse, HostChannelResponse,
-    HostPackageResponse, ErrataSummary, HostMissingErrataResponse,
-    SyncRequest, SyncResponse
-)
-from backend.app.schemas.compliance import (
-    ComplianceFrameworkSummary, ComplianceFrameworkDetail, ComplianceRuleResponse,
-    ComplianceFindingResponse, ComplianceScanCreate, ComplianceScanResponse, ComplianceScanDetail
-)
-from backend.app.schemas.agent import (
-    ThoughtStepResponse, AgentAnalysisCreate, AgentAnalysisResponse,
-    HostDriftItem, DriftSummaryResponse
-)
-from backend.app.schemas.remediation import (
-    RemediationStepResponse, RemediationPlanSummary, RemediationPlanDetail,
-    PlanApproveRequest, PlanRejectRequest, PlanExecuteResponse
-)
-from backend.app.schemas.report import (
-    ComplianceSummaryReportItem, HostComplianceReportItem,
-    ExecutiveComplianceReportResponse, AuditLogResponse, AuditLogListResponse
-)
+from backend.app.schemas.chat import ChatMessageCreate, ChatMessageResponse, ChatSessionResponse
+from backend.app.schemas.system import ServerSummary, PackageInfo
+from backend.app.schemas.compliance import OpenSCAPScanResponse, ErrataAdvisorySchema, RuleResultSchema
+from backend.app.schemas.approval import ApprovalActionRequest, ApprovalResponse
+from backend.app.schemas.report import ReportGenerateRequest, ReportResponse
 
 __all__ = [
-    "UserCreate", "UserResponse", "Token", "TokenPayload", "LoginRequest",
-    "HostSummary", "HostDetail", "HostListResponse", "HostChannelResponse",
-    "HostPackageResponse", "ErrataSummary", "HostMissingErrataResponse",
-    "SyncRequest", "SyncResponse",
-    "ComplianceFrameworkSummary", "ComplianceFrameworkDetail", "ComplianceRuleResponse",
-    "ComplianceFindingResponse", "ComplianceScanCreate", "ComplianceScanResponse", "ComplianceScanDetail",
-    "ThoughtStepResponse", "AgentAnalysisCreate", "AgentAnalysisResponse",
-    "HostDriftItem", "DriftSummaryResponse",
-    "RemediationStepResponse", "RemediationPlanSummary", "RemediationPlanDetail",
-    "PlanApproveRequest", "PlanRejectRequest", "PlanExecuteResponse",
-    "ComplianceSummaryReportItem", "HostComplianceReportItem",
-    "ExecutiveComplianceReportResponse", "AuditLogResponse", "AuditLogListResponse"
+    "ChatMessageCreate",
+    "ChatMessageResponse",
+    "ChatSessionResponse",
+    "ServerSummary",
+    "PackageInfo",
+    "OpenSCAPScanResponse",
+    "ErrataAdvisorySchema",
+    "RuleResultSchema",
+    "ApprovalActionRequest",
+    "ApprovalResponse",
+    "ReportGenerateRequest",
+    "ReportResponse"
 ]

@@ -1,71 +1,39 @@
+"""Test configuration and fixtures using TestClient."""
 import pytest
-import os
-import sys
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
-# Add project root to sys.path
-sys.path.insert(0, "/home/shreya/compliance-agent")
-
-from backend.app.config import settings
-from backend.app.database import Base, get_db
+from backend.app.core.database import Base, get_db
 from backend.app.main import app
-from backend.app.utils.seed_data import seed_database
-from backend.app.utils.security import create_access_token
 
-# Use in-memory SQLite for test isolation
-TEST_DATABASE_URL = "sqlite:///:memory:"
-engine_test = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_test)
-
-@pytest.fixture(scope="session", autouse=True)
-def init_test_db():
-    Base.metadata.create_all(bind=engine_test)
-    db = TestingSessionLocal()
-    seed_database(db)
-    db.close()
-    yield
-    Base.metadata.drop_all(bind=engine_test)
+SYNC_TEST_DB_URL = "sqlite:///./test_sync.db"
+ASYNC_TEST_DB_URL = "sqlite+aiosqlite:///./test_async.db"
 
 @pytest.fixture(scope="function")
-def db_session():
-    connection = engine_test.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
-    yield session
-    session.close()
-    transaction.rollback()
-    connection.close()
+def test_client():
+    async_engine = create_async_engine(ASYNC_TEST_DB_URL, echo=False)
+    async_session = async_sessionmaker(bind=async_engine, class_=AsyncSession, expire_on_commit=False)
 
-@pytest.fixture(scope="function")
-def client(db_session):
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
+    # Init tables
+    import asyncio
+    async def init():
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    asyncio.run(init())
+
+    async def override_get_db():
+        async with async_session() as session:
+            yield session
+
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
+    with TestClient(app) as client:
+        yield client
     app.dependency_overrides.clear()
 
-@pytest.fixture
-def admin_headers():
-    token = create_access_token({"sub": "admin", "role": "Admin", "id": 1})
-    return {"Authorization": f"Bearer {token}"}
-
-@pytest.fixture
-def sec_officer_headers():
-    token = create_access_token({"sub": "sec_officer", "role": "Security_Officer", "id": 2})
-    return {"Authorization": f"Bearer {token}"}
-
-@pytest.fixture
-def operator_headers():
-    token = create_access_token({"sub": "operator", "role": "Operator", "id": 3})
-    return {"Authorization": f"Bearer {token}"}
-
-@pytest.fixture
-def auditor_headers():
-    token = create_access_token({"sub": "auditor", "role": "Auditor", "id": 4})
-    return {"Authorization": f"Bearer {token}"}
+    async def teardown():
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await async_engine.dispose()
+    asyncio.run(teardown())

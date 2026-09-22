@@ -1,61 +1,65 @@
 version: '3.8'
 
 services:
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    container_name: suse_mlm_backend
-    ports:
-      - "8000:8000"
+  postgres:
+    image: postgres:15-alpine
+    container_name: suse-mlm-sec-postgres
+    restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://compliance_user:compliance_pass@db:5432/compliance_db
-      - SECRET_KEY=suse-mlm-compliance-prod-secret-2026
-      - SUSE_MLM_URL=https://10.0.33.56/rhn/apidoc/index.jsp
-      - SUSE_MLM_API_BASE=https://10.0.33.56/rpc/api
-      - SUSE_MLM_USER=admin
-      - SUSE_MLM_PASSWORD=admin123
-      - SUSE_MLM_MOCK_FALLBACK=True
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - compliance_net
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    container_name: suse_mlm_frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    networks:
-      - compliance_net
-
-  db:
-    image: postgres:16-alpine
-    container_name: suse_mlm_db
-    environment:
-      - POSTGRES_USER=compliance_user
-      - POSTGRES_PASSWORD=compliance_pass
-      - POSTGRES_DB=compliance_db
+      POSTGRES_USER: secagent
+      POSTGRES_PASSWORD: secagent_password
+      POSTGRES_DB: suse_sec_agent
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U compliance_user -d compliance_db"]
+      test: ["CMD-SHELL", "pg_isready -U secagent -d suse_sec_agent"]
       interval: 5s
       timeout: 5s
       retries: 5
-    networks:
-      - compliance_net
 
-networks:
-  compliance_net:
-    driver: bridge
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp_server/Dockerfile
+    container_name: suse-mlm-fastmcp-server
+    restart: unless-stopped
+    environment:
+      MLM_API_URL: https://10.0.33.56/rpc/api
+      MLM_USER: admin
+      MLM_PASSWORD: admin123
+    ports:
+      - "8001:8001"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: suse-mlm-sec-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://secagent:secagent_password@postgres:5432/suse_sec_agent
+      MCP_SERVER_NAME: suse-mlm-security
+      APPROVAL_TOKEN_TTL_SECONDS: 900
+      COMPLIANCE_TIMEOUT_SECONDS: 300
+      AUDIT_RETENTION_DAYS: 365
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: suse-mlm-sec-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
 
 volumes:
   pgdata:
